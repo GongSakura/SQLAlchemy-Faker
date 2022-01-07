@@ -1,0 +1,9 @@
+LICENSE.txt
+README.md
+setup.py
+src/sqlalchemy_faker/__init__.py
+src/sqlalchemy_faker/core.py
+src/sqlalchemy_faker.egg-info/PKG-INFO
+src/sqlalchemy_faker.egg-info/SOURCES.txt
+src/sqlalchemy_faker.egg-info/dependency_links.txt
+src/sqlalchemy_faker.egg-info/top_level.txt

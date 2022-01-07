@@ -1,2 +1,3 @@
-# SQLFaker
-The project is designed for generating fake data for the majority of databases within one step !
+# SQLAlchemy-Faker
+
+The project is designed for generating fake data for SQLAlchemy ORM within one step !

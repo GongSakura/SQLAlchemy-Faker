@@ -1,0 +1,19 @@
+Metadata-Version: 2.1
+Name: sqlalchemy-faker
+Version: 0.0.1
+Summary: a tool of sqlalchemy for generating fake data
+Home-page: https://github.com/GongSakura/SQLAlchemy-Faker
+Author: GongSakura
+Author-email: gongskaura@yahoo.com
+License: UNKNOWN
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+License-File: LICENSE.txt
+
+# SQLFaker
+The project is designed for generating fake data for the majority of databases within one step !
+
+
