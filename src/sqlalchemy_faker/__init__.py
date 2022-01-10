@@ -1,14 +1,15 @@
+import uuid
 import warnings
+import random
 
 from sqlalchemy import MetaData, String, BLOB, INTEGER, Text, FLOAT, BOOLEAN, insert, text, Integer
 from sqlalchemy.future.engine import Engine
 from collections import defaultdict
 from faker import Faker
-import random
+from gensim.models import Word2Vec
+import gensim.downloader
 
 from .core import RelationTree
-
-Faker.seed(0)
 
 
 class SQLFaker:
@@ -18,87 +19,96 @@ class SQLFaker:
 
         self.relationTree = RelationTree(self.metadata)
         self.tables = self.relationTree.get_tables()
+        Faker.seed(random.randint(0, 100))
         self.faker = Faker(locale)
 
-    def fake(self, name: str, n: int = 10, ) -> None:
+    def fake(self, name: str, n: int = 10, insert_n: int = 100) -> None:
         """
         generate fake data
         :param name: table name
         :param n: the number of fake data
-        :param locale: a list of localization, it can generate different language fake data
+        :param insert_n: the number of record inserted to the database each time
         """
         table = self.tables.get(name, None)
+        try:
+            if table is not None:
+                count = 0
+                columns_info = self.get_columns_info(table.columns)
 
-        if table is not None:
-            count = 0
-            columns_info = self.get_columns_info(table.columns)
+                data = []
 
-            data = []
-            while count < n:
-                record = {}
-                for k, v in columns_info.items():
-                    if len(v['foreign_keys']) != 0 and len(v['foreign_key_set']) == 0:
-                        raise ValueError(f'Table:{table}, the column {k} failed foreign key constraint')
+                while count < n:
+                    record = {}
 
-                    if not v['primary_key'] and not v['unique']:
-                        if v.get('foreign_key_set'):
-                            record[k] = v.get('foreign_key_set').pop()
-                            v.get('foreign_key_set').add(record[k])
+                    for col_name, col in columns_info.items():
+                        if len(col['foreign_keys']) != 0 and len(col['foreign_key_set']) == 0:
+                            raise ValueError(f'Table:{table}, the column {col_name} failed foreign key constraint')
+
+                        if not col['primary_key'] and not col['unique']:
+                            if col.get('foreign_key_set'):
+                                record[col_name] = col.get('foreign_key_set').pop()
+                                col.get('foreign_key_set').add(record[col_name])
+                            else:
+                                record[col_name] = self.fake_by_type(col['type'])
+                        elif col['primary_key']:
+                            # primary key
+                            if col.get('foreign_key_set'):
+                                if len(col.get('foreign_key_set')) == 0:
+                                    raise ValueError(
+                                        f'Table:{table}, the column {col_name} foreign keys had been used up')
+                                tmp = col.get('foreign_key_set').pop()
+                                col['primary_key_set'].add(tmp)
+                                record[col_name] = tmp
+                            else:
+                                tmp = self.fake_unique_by_type(col['type'], count)
+                                col['primary_key_set'].add(tmp)
+                                record[col_name] = tmp
                         else:
-                            record[k] = self.fake_by_type(v['type'])
-                    elif v['primary_key']:
-                        if v.get('foreign_key_set'):
-                            if len(v.get('foreign_key_set')) == 0:
-                                raise ValueError(f'Table:{table}, the column {k} foreign keys had been used up')
+                            # unique data
+                            if col.get('foreign_key_set'):
+                                if len(col.get('foreign_key_set')) == 0:
+                                    raise ValueError(
+                                        f'Table:{table}, the column {col_name} foreign keys had been used up')
 
-                            tmp = v.get('foreign_key_set').pop()
-                            v['primary_key_set'].add(tmp)
-                            record[k] = tmp
-                        else:
-                            tmp = self.fake_by_type(v['type'])
-                            while tmp in v['primary_key_set']:
-                                tmp = self.fake_by_type(v['type'])
+                                tmp = col.get('foreign_key_set').pop()
+                                col['key_set'].add(tmp)
+                                record[col_name] = tmp
+                            else:
+                                tmp = self.fake_unique_by_type(col['type'], count)
+                                col['key_set'].add(tmp)
+                                record[col_name] = tmp
 
-                            v['primary_key_set'].add(tmp)
-                            record[k] = tmp
-                    else:
-                        if v.get('foreign_key_set'):
-                            if len(v.get('foreign_key_set')) == 0:
-                                raise ValueError(f'Table:{table}, the column {k} foreign keys had been used up')
-
-                            tmp = v.get('foreign_key_set').pop()
-                            v['key_set'].add(tmp)
-                            record[k] = tmp
-                        else:
-                            tmp = self.fake_by_type(v['type'])
-                            while tmp in v['key_set']:
-                                tmp = self.fake_by_type(v['type'])
-                            v['key_set'].add(tmp)
-                            record[k] = tmp
-
-                # insert 100 record each time
-                if len(data) == 500:
-                    with self.engine.begin() as conn:
-                        conn.execute(insert(table).prefix_with('IGNORE'), data)
-                    data = []
-                else:
                     data.append(record)
+                    count += 1
 
-                count += 1
+                # end loop, insert data
+                if len(data) != 0:
+                    with self.engine.connect() as conn:
+                        # each time insert 100
+                        for i in range(int(n / insert_n), 0, -1):
+                            conn.execute(insert(table), data[-insert_n:])
+                            conn.commit()
+                            del data[-insert_n:]
 
-            if len(data) != 0:
-                with self.engine.begin() as conn:
-                    conn.execute(insert(table).prefix_with('IG`NORE'), data)
-        else:
-            raise ValueError(f'{name} table is not existed')
+                        if len(data) != 0:
+                            conn.execute(insert(table), data)
+                            conn.commit()
+                            del data
 
-    def auto_fake(self, n: int = 10):
+                del columns_info
+            else:
+                raise ValueError(f'{name} table is not existed')
+        except Exception as e:
+            warnings.warn(str(e))
+
+    def auto_fake(self, n: int = 10, insert_n: int = 100):
         """
         auto fake n records
+        :param insert_n: the number of record inserted to database each time
         :param n: the number of fake data
         """
         for name, table in self.tables.items():
-            self.fake(name, n)
+            self.fake(name, n, insert_n)
 
     def get_columns_info(self, columns) -> dict:
         info = defaultdict(dict)
@@ -128,12 +138,12 @@ class SQLFaker:
             if length is None:
                 return self.faker.text(max_nb_chars=10)
             elif length <= 5:
-                return self.faker.text(max_nb_chars=10)[:5]
+                return self.faker.text(max_nb_chars=6)[:length]
             else:
                 return self.faker.text(max_nb_chars=length)
 
         if isinstance(_type, INTEGER) or isinstance(_type, Integer):
-            return self.faker.random_int(step=1)
+            return self.faker.random_int(min=0, step=1, max=9999999)
 
         if isinstance(_type, FLOAT):
             return self.faker.pyfloat(right_digits=4)
@@ -143,3 +153,35 @@ class SQLFaker:
 
         if isinstance(_type, BLOB):
             return self.faker.text(max_nb_chars=20).encode('uft-8')
+
+    def fake_by_name(self, _type, _name):
+        """
+        :param _type: the type of the data
+        :param _name: the name of the data, it should be the column name
+        :return:
+        """
+        pass
+
+    def fake_unique_by_type(self, _type, k):
+        """
+        generate fake unique data through nth
+        :param _type:
+        :param k: the kth record
+        :return:
+        """
+        if isinstance(_type, INTEGER) or isinstance(_type, Integer):
+            return k + 1
+        elif isinstance(_type, FLOAT):
+            return round(random.random() + k + 1, 4)
+        elif isinstance(_type, BLOB):
+            return uuid.uuid4().bytes
+        elif isinstance(_type, String) or isinstance(_type, Text):
+            length = _type.length
+            if length is None:
+                return f'{k + 1}-{self.faker.text(max_nb_chars=10)}'
+            elif length <= 5:
+                return self.faker.text(max_nb_chars=6)[:length]
+            else:
+                return f'{k + 1}-{self.faker.text(max_nb_chars=length)}'[:length]
+
+        return None
