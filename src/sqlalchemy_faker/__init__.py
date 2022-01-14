@@ -10,13 +10,16 @@ from sqlalchemy import DECIMAL, FLOAT, Numeric
 from sqlalchemy import INT, SMALLINT, BIGINT
 from sqlalchemy import JSON
 from sqlalchemy import TIMESTAMP, TIME, DATETIME, DATE
-from sqlalchemy import BINARY, VARBINARY, BLOB
+from sqlalchemy import BINARY, VARBINARY
 
 from sqlalchemy.future.engine import Engine
+from sqlalchemy.orm import Session
 from collections import defaultdict
 from faker import Faker
-
 from .core import RelationTree
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+
 
 
 class SQLFaker:
@@ -36,6 +39,7 @@ class SQLFaker:
                               'address': [self.faker.address],
                               'city': [self.faker.city],
                               'country': [self.faker.country]}
+        self.pool = ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()+1)
 
     def fake(self, name: str, n: int = 10, insert_n: int = 100, fake_by: str = 'type') -> None:
         """
@@ -81,7 +85,7 @@ class SQLFaker:
                                 col['primary_key_set'].add(tmp)
                                 record[col_name] = tmp
                             else:
-                                tmp = self.generate_by_type(col['type'], True, count)
+                                tmp = self.generate_by_type(col['type'], True, count+1)
                                 col['primary_key_set'].add(tmp)
                                 record[col_name] = tmp
                         else:
@@ -95,26 +99,36 @@ class SQLFaker:
                                 col['key_set'].add(tmp)
                                 record[col_name] = tmp
                             else:
-                                tmp = self.generate_by_type(col['type'], True, count)
+                                tmp = self.generate_by_type(col['type'], True, count+1)
                                 col['key_set'].add(tmp)
                                 record[col_name] = tmp
 
-                    print(record)
                     data.append(record)
                     count += 1
 
+                    if len(data) == insert_n:
+                        self.pool.submit(self.sql_insert,table,data)
+                        data = []
+
+
+
                 # end loop, insert data
                 if len(data) != 0:
-                    with self.engine.connect() as conn:
-                        for i in range(int(n / insert_n), 0, -1):
-                            conn.execute(insert(table), data[-insert_n:])
-                            conn.commit()
-                            del data[-insert_n:]
 
-                        if len(data) != 0:
-                            conn.execute(insert(table), data)
-                            conn.commit()
-                            del data
+                    with Session(self.engine,autoflush=True) as conn:
+                        conn.execute(insert(table), data)
+                        conn.commit()
+                    # for i in range(int(n / insert_n), 0, -1):
+                    #     conn.execute(insert(table), data[-insert_n:])
+                    #     del data[-insert_n:]
+                    #     conn.commit()
+                    #
+                    # if len(data) != 0:
+                    #     conn.execute(insert(table), data)
+                    #     del data
+                    #
+                    # conn.commit()
+
 
                 del columns_info
             else:
@@ -177,15 +191,15 @@ class SQLFaker:
         elif isinstance(_type, BIGINT):
             if is_unique:
                 return k
-            return abs(random.randint(-2 ** 63, 2 ** 63 - 1))
+            return random.randint(-2 ** 63, 2 ** 63 - 1)
         elif isinstance(_type, SMALLINT):
             if is_unique:
                 return k
-            return abs(random.randint(-2 ** 15, 2 ** 15 - 1))
+            return random.randint(-2 ** 15, 2 ** 15 - 1)
         elif isinstance(_type, INT):
             if is_unique:
                 return k
-            return abs(random.randint(-2 ** 31, 2 ** 31 - 1))
+            return random.randint(-2 ** 31, 2 ** 31 - 1)
 
         elif isinstance(_type, DECIMAL):
             if is_unique:
@@ -248,3 +262,9 @@ class SQLFaker:
         """
         # TODO: fake by name
         pass
+
+    def sql_insert(self,table,data):
+        with Session(self.engine,autoflush=True) as conn:
+            conn.execute(insert(table),data)
+            conn.commit()
+        return True
