@@ -59,7 +59,6 @@ class SQLFaker:
                 columns_info = self.get_columns_info(table.columns)
 
                 data = []
-
                 while count < n:
                     record = {}
 
@@ -106,33 +105,26 @@ class SQLFaker:
                     data.append(record)
                     count += 1
 
-                    if len(data) == insert_n:
-                        self.pool.submit(self.sql_insert,table,data)
-                        data = []
-
-
-
                 # end loop, insert data
                 if len(data) != 0:
-
                     with Session(self.engine,autoflush=True) as conn:
-                        conn.execute(insert(table), data)
+
+                        for i in range(int(n / insert_n), 0, -1):
+                            conn.execute(insert(table), data[-insert_n:])
+                            del data[-insert_n:]
+                            conn.commit()
+
+                        if len(data) != 0:
+                            conn.execute(insert(table), data)
+                            del data
+
                         conn.commit()
-                    # for i in range(int(n / insert_n), 0, -1):
-                    #     conn.execute(insert(table), data[-insert_n:])
-                    #     del data[-insert_n:]
-                    #     conn.commit()
-                    #
-                    # if len(data) != 0:
-                    #     conn.execute(insert(table), data)
-                    #     del data
-                    #
-                    # conn.commit()
 
 
-                del columns_info
+
             else:
                 raise ValueError(f'{name} table is not existed')
+            del columns_info
         except Exception as e:
             warnings.warn(str(e))
 
@@ -263,8 +255,61 @@ class SQLFaker:
         # TODO: fake by name
         pass
 
-    def sql_insert(self,table,data):
+    def insert(self, table, data):
         with Session(self.engine,autoflush=True) as conn:
             conn.execute(insert(table),data)
             conn.commit()
         return True
+    #
+    # def generate_records(self,table,columns_info,n,start):
+    #     records = []
+    #     count = 1
+    #     while count <= n:
+    #         record={}
+    #         for col_name, col in columns_info.items():
+    #
+    #             if len(col['foreign_keys']) != 0 and len(col['foreign_key_set']) == 0:
+    #                 raise ValueError(f'Table:{table}, the column {col_name} failed foreign key constraint')
+    #
+    #             if not col['primary_key'] and not col['unique']:
+    #                 if col.get('foreign_key_set'):
+    #                     record[col_name] = col.get('foreign_key_set').pop()
+    #                     col.get('foreign_key_set').add(record[col_name])
+    #                 else:
+    #
+    #                     record[col_name] = self.generate_by_type(col['type'])
+    #             elif col['primary_key']:
+    #                 # primary key
+    #                 if col.get('foreign_key_set'):
+    #                     if len(col.get('foreign_key_set')) == 0:
+    #                         raise ValueError(
+    #                             f'Table:{table}, the column {col_name} foreign keys had been used up')
+    #                     tmp = col.get('foreign_key_set').pop()
+    #                     col['primary_key_set'].add(tmp)
+    #                     record[col_name] = tmp
+    #                 else:
+    #                     tmp = self.generate_by_type(col['type'], True, count+start)
+    #                     col['primary_key_set'].add(tmp)
+    #                     record[col_name] = tmp
+    #             else:
+    #                 # unique data
+    #                 if col.get('foreign_key_set'):
+    #                     if len(col.get('foreign_key_set')) == 0:
+    #                         raise ValueError(
+    #                             f'Table:{table}, the column {col_name} foreign keys had been used up')
+    #
+    #                     tmp = col.get('foreign_key_set').pop()
+    #                     col['key_set'].add(tmp)
+    #                     record[col_name] = tmp
+    #                 else:
+    #                     tmp = self.generate_by_type(col['type'], True, count+start)
+    #                     col['key_set'].add(tmp)
+    #                     record[col_name] = tmp
+    #         count +=1
+    #         records.append(record)
+    #     # print(len(records))
+    #     return records
+    #
+    # def fake_test(self,table,columns_info,n,start):
+    #     data = self.generate_records(table,columns_info,n,start)
+    #     self.insert(table,data)

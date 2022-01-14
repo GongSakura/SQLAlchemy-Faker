@@ -11,7 +11,7 @@ base.metadata.create_all(bind=Engine)
 
 faker = SQLFaker(metadata=base.metadata,engine=Engine)
 print(datetime.now())
-faker.auto_fake(n=123456,insert_n=1000)
+faker.auto_fake(n=123456,insert_n=500)
 print(datetime.now())
 # metadata = base.metadata
 # print(metadata.__dict__)
