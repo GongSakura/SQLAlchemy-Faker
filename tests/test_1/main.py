@@ -9,7 +9,8 @@ from schemas import base
 base.metadata.drop_all(bind=Engine)
 base.metadata.create_all(bind=Engine)
 
-# faker = SQLFaker(metadata=base.metadata,engine=Engine)
-metadata = base.metadata
-print(metadata.__dict__)
+faker = SQLFaker(metadata=base.metadata,engine=Engine)
+faker.auto_fake(n=100)
+# metadata = base.metadata
+# print(metadata.__dict__)
 

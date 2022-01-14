@@ -1,17 +1,16 @@
-import uuid
 import warnings
 import random
 
 from datetime import datetime, timedelta
 
-timedelta.
 from sqlalchemy import MetaData, insert, text
 from sqlalchemy import String, TEXT, Unicode, UnicodeText
 from sqlalchemy import BOOLEAN
 from sqlalchemy import DECIMAL, FLOAT, Numeric
 from sqlalchemy import INT, SMALLINT, BIGINT
-
+from sqlalchemy import JSON
 from sqlalchemy import TIMESTAMP, TIME, DATETIME, DATE
+from sqlalchemy import BINARY, VARBINARY, BLOB
 
 from sqlalchemy.future.engine import Engine
 from collections import defaultdict
@@ -23,10 +22,11 @@ from .core import RelationTree
 class SQLFaker:
     # generator configuration
     TEXT_LENGTH = 50
-    INITIAL_DATE = datetime.date(year=1970, month=1, day=1)
+    INITIAL_DATE = datetime(year=1970, month=1, day=1).date()
     DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
     def __init__(self, metadata: MetaData, engine: Engine, locale: list = ['en_US']):
+
         self.metadata = metadata
         self.engine = engine
         self.relationTree = RelationTree(self.metadata)
@@ -58,7 +58,9 @@ class SQLFaker:
 
                 while count < n:
                     record = {}
+
                     for col_name, col in columns_info.items():
+
                         if len(col['foreign_keys']) != 0 and len(col['foreign_key_set']) == 0:
                             raise ValueError(f'Table:{table}, the column {col_name} failed foreign key constraint')
 
@@ -67,6 +69,7 @@ class SQLFaker:
                                 record[col_name] = col.get('foreign_key_set').pop()
                                 col.get('foreign_key_set').add(record[col_name])
                             else:
+
                                 record[col_name] = self.generate_by_type(col['type'])
                         elif col['primary_key']:
                             # primary key
@@ -78,7 +81,7 @@ class SQLFaker:
                                 col['primary_key_set'].add(tmp)
                                 record[col_name] = tmp
                             else:
-                                tmp = self.fake_unique_by_type(col['type'], count)
+                                tmp = self.generate_by_type(col['type'], True, count)
                                 col['primary_key_set'].add(tmp)
                                 record[col_name] = tmp
                         else:
@@ -92,16 +95,17 @@ class SQLFaker:
                                 col['key_set'].add(tmp)
                                 record[col_name] = tmp
                             else:
-                                tmp = self.fake_unique_by_type(col['type'], count)
+                                tmp = self.generate_by_type(col['type'], True, count)
                                 col['key_set'].add(tmp)
                                 record[col_name] = tmp
+
+                    print(record)
                     data.append(record)
                     count += 1
 
                 # end loop, insert data
                 if len(data) != 0:
                     with self.engine.connect() as conn:
-                        # each time insert 100
                         for i in range(int(n / insert_n), 0, -1):
                             conn.execute(insert(table), data[-insert_n:])
                             conn.commit()
@@ -152,103 +156,95 @@ class SQLFaker:
                 info[c.name]['key_set'] = set()
         return info
 
-    def generate_by_type(self, _type, is_unique=False, k=-1):
+    def generate_by_type(self, _type, is_unique=False, k=0):
         """
         generate fake data by type
+        :param k:
+        :param is_unique:
         :param _type: Please refer to sqlalchemy sqltypes
         :return: corresponding data
         """
+
         if is_unique and k < -1 and not isinstance(k, int):
             raise ValueError('If "is_unique"==True, k must be a positive integer')
 
-        try:
-            if isinstance(_type, String) or isinstance(_type, Unicode):
-                length = _type.length
-                return self.faker.pystr(min_chars=1, max_chars=length)
+        if isinstance(_type, TEXT) or isinstance(_type, UnicodeText):
+            return self.faker.text(50)
 
-            if isinstance(_type, TEXT) or isinstance(_type, UnicodeText):
-                return self.faker.text(max_nb_chars=self.TEXT_LENGTH)
+        elif isinstance(_type, String) or isinstance(_type, Unicode):
+            length = _type.length
+            return self.faker.pystr(min_chars=1, max_chars=length)
+        elif isinstance(_type, BIGINT):
+            if is_unique:
+                return k
+            return abs(random.randint(-2 ** 63, 2 ** 63 - 1))
+        elif isinstance(_type, SMALLINT):
+            if is_unique:
+                return k
+            return abs(random.randint(-2 ** 15, 2 ** 15 - 1))
+        elif isinstance(_type, INT):
+            if is_unique:
+                return k
+            return abs(random.randint(-2 ** 31, 2 ** 31 - 1))
 
-            if isinstance(_type, INT):
-                if is_unique:
-                    return k
-                return random.randint(-2 ** 31, 2 ** 31 - 1)
+        elif isinstance(_type, DECIMAL):
+            if is_unique:
+                return self.faker.pydecimal(left_digits=0, positive=True) + k
+            return self.faker.pydecimal(left_digits=2,positive=True)
+        elif isinstance(_type, FLOAT) or isinstance(_type, Numeric):
 
-            if isinstance(_type, SMALLINT):
-                if is_unique:
-                    return k
-                return random.randint(-2 ** 15, 2 ** 15 - 1)
+            if _type.asdecimal:
+                tmp = self.faker.pydecimal(left_digits=0,positive=True)
+            else:
+                tmp = self.faker.pyfloat(right_digits=_type.precision, positive=True)
 
-            if isinstance(_type, BIGINT):
-                if is_unique:
-                    return k
-                return random.randint(-2 ** 63, 2 ** 63 - 1)
+            if is_unique:
+                tmp += k
 
-            if isinstance(_type, FLOAT) or isinstance(_type, Numeric):
+            return tmp
+        elif isinstance(_type, BOOLEAN):
+            if is_unique:
+                raise ValueError('Does not support unique value for BOOLEAN type')
+            return self.faker.pybool()
 
-                if _type.asdecimal:
-                    tmp = self.faker.pydecimal(positive=True)
-                else:
-                    tmp = self.faker.pyfloat(right_digits=_type.precision, positive=True)
+        elif isinstance(_type, DATE):
+            if is_unique:
+                return self.INITIAL_DATE + timedelta(days=k)
+            return self.faker.date_time().date()
 
-                if is_unique:
-                    tmp += k
+        elif isinstance(_type, DATETIME):
+            if is_unique:
+                return datetime.now()
+            return self.faker.date_time()
 
-                return tmp
+        elif isinstance(_type, TIME):
+            if is_unique:
+                return datetime.now().time()
+            return self.faker.time()
 
-            if isinstance(_type, DECIMAL):
-                if is_unique:
-                    return self.faker.pydecimal(positive=True) + k
-                return self.faker.pydecimal(positive=True)
+        elif isinstance(_type, TIMESTAMP):
+            if is_unique:
+                return datetime.now()
+            return datetime.now()
 
-            if isinstance(_type, BOOLEAN):
-                return self.faker.pybool()
+        elif isinstance(_type, JSON):
+            if is_unique:
+                raise ValueError('Does not support unique value for JSON type')
+            return self.faker.json()
 
-            if isinstance(_type, DATE):
-                if is_unique:
-                    return self.INITIAL_DATE + timedelta(days=k)
-                return datetime.date(year=random.randint(1970,2030),month=random.randint(1,12),day=random.randint(1,30))
+        elif isinstance(_type, BINARY) or isinstance(_type, VARBINARY):
+            length = _type.length
+            if is_unique:
+                raise ValueError('Does not support unique value for BINARY type')
+            return self.faker.binary(length=length)
 
-            if isinstance(_type, DATETIME):
-                if is_unique:
-                    return datetime.now()
-                return self.faker.date_time()
+        raise ValueError(f'Does not support {_type.__repr__()} type')
 
-            #todo:finish the rest of data types
-            #
-            # if isinstance(_type, BLOB):
-            #     return self.faker.text(max_nb_chars=20).encode('uft-8')
-        except Exception as e:
-            raise e
-
-    def fake_by_name(self, _type, _name):
+    def generate_by_name(self, _type, _name, is_unique=False, k=0):
         """
         :param _type: the type of the data
         :param _name: the name of the data, it should be the column name
         :return:
         """
+        # TODO: fake by name
         pass
-
-    def fake_unique_by_type(self, _type, k):
-        """
-        generate fake unique data through nth
-        :param _type:
-        :param k: the kth record
-        :return:
-        """
-        if isinstance(_type, INTEGER) or isinstance(_type, Integer):
-            return k + 1
-        elif isinstance(_type, FLOAT):
-            return round(random.random() + k + 1, 4)
-        elif isinstance(_type, BLOB):
-            return uuid.uuid4().bytes
-        elif isinstance(_type, String) or isinstance(_type, Text):
-            length = _type.length
-            if length is None:
-                return f'{k + 1}-{self.faker.text(max_nb_chars=10)}'
-            elif length <= 5:
-                return self.faker.text(max_nb_chars=6)[:length]
-            else:
-                return f'{k + 1}-{self.faker.text(max_nb_chars=length)}'[:length]
-
-        return None
