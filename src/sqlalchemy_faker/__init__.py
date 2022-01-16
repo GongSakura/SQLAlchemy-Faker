@@ -21,7 +21,6 @@ from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 
 
-
 class SQLFaker:
     # generator configuration
     TEXT_LENGTH = 50
@@ -39,7 +38,7 @@ class SQLFaker:
                               'address': [self.faker.address],
                               'city': [self.faker.city],
                               'country': [self.faker.country]}
-        self.pool = ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()+1)
+        self.pool = ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() + 1)
 
     def fake(self, name: str, n: int = 10, insert_n: int = 100, fake_by: str = 'type') -> None:
         """
@@ -84,7 +83,7 @@ class SQLFaker:
                                 col['primary_key_set'].add(tmp)
                                 record[col_name] = tmp
                             else:
-                                tmp = self.generate_by_type(col['type'], True, count+1)
+                                tmp = self.generate_by_type(col['type'], True, count + 1)
                                 col['primary_key_set'].add(tmp)
                                 record[col_name] = tmp
                         else:
@@ -98,7 +97,7 @@ class SQLFaker:
                                 col['key_set'].add(tmp)
                                 record[col_name] = tmp
                             else:
-                                tmp = self.generate_by_type(col['type'], True, count+1)
+                                tmp = self.generate_by_type(col['type'], True, count + 1)
                                 col['key_set'].add(tmp)
                                 record[col_name] = tmp
 
@@ -107,7 +106,7 @@ class SQLFaker:
 
                 # end loop, insert data
                 if len(data) != 0:
-                    with Session(self.engine,autoflush=True) as conn:
+                    with Session(self.engine, autoflush=True) as conn:
 
                         for i in range(int(n / insert_n), 0, -1):
                             conn.execute(insert(table), data[-insert_n:])
@@ -169,16 +168,25 @@ class SQLFaker:
         :param is_unique:
         :param _type: Please refer to sqlalchemy sqltypes
         :return: corresponding data
+
+        Be careful, if string length ==1, it only support 1,114,112 unique character
         """
 
         if is_unique and k < -1 and not isinstance(k, int):
             raise ValueError('If "is_unique"==True, k must be a positive integer')
 
         if isinstance(_type, TEXT) or isinstance(_type, UnicodeText):
+            if is_unique:
+                return chr(k%1114111) + '-' + self.faker.text(50)
             return self.faker.text(50)
 
         elif isinstance(_type, String) or isinstance(_type, Unicode):
             length = _type.length
+            if is_unique:
+                if length==1:
+                    return chr(k%1114111)
+                else:
+                    return chr(k%1114111) + self.faker.pystr(min_chars=1, max_chars=length-1)
             return self.faker.pystr(min_chars=1, max_chars=length)
         elif isinstance(_type, BIGINT):
             if is_unique:
@@ -196,11 +204,11 @@ class SQLFaker:
         elif isinstance(_type, DECIMAL):
             if is_unique:
                 return self.faker.pydecimal(left_digits=0, positive=True) + k
-            return self.faker.pydecimal(left_digits=2,positive=True)
+            return self.faker.pydecimal(left_digits=2, positive=True)
         elif isinstance(_type, FLOAT) or isinstance(_type, Numeric):
 
             if _type.asdecimal:
-                tmp = self.faker.pydecimal(left_digits=0,positive=True)
+                tmp = self.faker.pydecimal(left_digits=0, positive=True)
             else:
                 tmp = self.faker.pyfloat(right_digits=_type.precision, positive=True)
 
@@ -254,62 +262,3 @@ class SQLFaker:
         """
         # TODO: fake by name
         pass
-
-    def insert(self, table, data):
-        with Session(self.engine,autoflush=True) as conn:
-            conn.execute(insert(table),data)
-            conn.commit()
-        return True
-    #
-    # def generate_records(self,table,columns_info,n,start):
-    #     records = []
-    #     count = 1
-    #     while count <= n:
-    #         record={}
-    #         for col_name, col in columns_info.items():
-    #
-    #             if len(col['foreign_keys']) != 0 and len(col['foreign_key_set']) == 0:
-    #                 raise ValueError(f'Table:{table}, the column {col_name} failed foreign key constraint')
-    #
-    #             if not col['primary_key'] and not col['unique']:
-    #                 if col.get('foreign_key_set'):
-    #                     record[col_name] = col.get('foreign_key_set').pop()
-    #                     col.get('foreign_key_set').add(record[col_name])
-    #                 else:
-    #
-    #                     record[col_name] = self.generate_by_type(col['type'])
-    #             elif col['primary_key']:
-    #                 # primary key
-    #                 if col.get('foreign_key_set'):
-    #                     if len(col.get('foreign_key_set')) == 0:
-    #                         raise ValueError(
-    #                             f'Table:{table}, the column {col_name} foreign keys had been used up')
-    #                     tmp = col.get('foreign_key_set').pop()
-    #                     col['primary_key_set'].add(tmp)
-    #                     record[col_name] = tmp
-    #                 else:
-    #                     tmp = self.generate_by_type(col['type'], True, count+start)
-    #                     col['primary_key_set'].add(tmp)
-    #                     record[col_name] = tmp
-    #             else:
-    #                 # unique data
-    #                 if col.get('foreign_key_set'):
-    #                     if len(col.get('foreign_key_set')) == 0:
-    #                         raise ValueError(
-    #                             f'Table:{table}, the column {col_name} foreign keys had been used up')
-    #
-    #                     tmp = col.get('foreign_key_set').pop()
-    #                     col['key_set'].add(tmp)
-    #                     record[col_name] = tmp
-    #                 else:
-    #                     tmp = self.generate_by_type(col['type'], True, count+start)
-    #                     col['key_set'].add(tmp)
-    #                     record[col_name] = tmp
-    #         count +=1
-    #         records.append(record)
-    #     # print(len(records))
-    #     return records
-    #
-    # def fake_test(self,table,columns_info,n,start):
-    #     data = self.generate_records(table,columns_info,n,start)
-    #     self.insert(table,data)
