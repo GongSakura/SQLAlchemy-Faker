@@ -2,7 +2,8 @@
 The core is construct a tree to store tables structure
 Use Breath first search is recommended
 """
-from sqlalchemy import Table, MetaData, ForeignKey
+from sqlalchemy import Table, MetaData, ForeignKey, text
+from sqlalchemy.future.engine import Engine
 from collections import defaultdict
 from queue import Queue
 
@@ -22,6 +23,7 @@ class RelationTree:
         self.root = RelationNode(name='_root')
         self.metadata = metadata
         self.parse_metadata()
+        self.insert_tables,self.query_tables = self.get_tables()
 
     def add_node(self, table: Table) -> None:
         """
@@ -41,7 +43,7 @@ class RelationTree:
         else:
             for key in table.foreign_keys:
                 # find the referenced table
-                referenced_name, _ = self.get_foreign_key(key)
+                referenced_name, _ = self.parse_foreign_key(key)
                 referenced_node = self.search_node(root=self.root, name=referenced_name)
 
                 if referenced_node is None:
@@ -82,28 +84,48 @@ class RelationTree:
         except Exception as e:
             raise e
 
-    def get_tables(self) -> dict:
+    def get_tables(self):
         """
         Get tables from the RelationTree via BFS(breath first search)
-        :return: a dict e.g {'table_name':table}
+        :return: a list
         """
-        result = defaultdict(Table)
+        insert_result = []
+        query_result = defaultdict(dict)
         pending = Queue()
         pending.put(self.root.children)
         while not pending.empty():
             nodes = pending.get()
             for node in nodes.values():
-                result[node.name] = node.table
+                insert_result.append([node.name, node.layer])
+                query_result[node.name] = {'layer': node.layer, 'table': node.table}
                 if len(node.children) != 0:
                     pending.put(node.children)
-        return result
+        return insert_result, query_result
 
-    @staticmethod
-    def get_table_info(table: Table) -> dict:
-        columns = table.columns
+    def get_columns_info(self, name: str, fetch_from_db: bool = False, engine: Engine = None) -> dict:
+        columns = self.query_tables[name]['table'].columns
         info = defaultdict(dict)
         for c in columns:
-            info[c.name] = columns.__dict__
+            info[c.name] = c.__dict__
+            if info[c.name]['primary_key'] or info[c.name]['unique']:
+                info[c.name]['key_set'] = set()
+
+            # as there is only one foreign key for each column
+            for key in info[c.name]['foreign_keys']:
+                referenced_table, referenced_column = self.parse_foreign_key(key)
+
+                # fetch from database
+                if fetch_from_db is True and isinstance(engine, Engine):
+                    with engine.connect() as conn:
+                        result = conn.execute(text(f'select {referenced_column} from {referenced_table}'))
+                        info[c.name]['foreign_key_set'] = set(result.scalars().all())
+
+                else:
+                    # fetch from tables
+                    info[c.name]['foreign_key_set'] = self.query_tables[referenced_table]['columns_info'][referenced_column][
+                        'key_set'].copy()
+
+        return info
 
     @staticmethod
     def search_node(root, name: str) -> RelationNode:
@@ -119,6 +141,6 @@ class RelationTree:
             return None
 
     @staticmethod
-    def get_foreign_key(key: ForeignKey) -> tuple:
+    def parse_foreign_key(key: ForeignKey) -> tuple:
         name, column = key._get_colspec().split('.')
         return name, column

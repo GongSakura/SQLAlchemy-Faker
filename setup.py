@@ -5,7 +5,7 @@ with open('README.md', 'r', encoding='utf-8') as f:
 
 setuptools.setup(
     name='sqlalchemy-faker',
-    version='0.0.1',
+    version='0.0.3',
     author='GongSakura',
     author_email='gongskaura@yahoo.com',
     description='a tool of sqlalchemy for generating fake data',

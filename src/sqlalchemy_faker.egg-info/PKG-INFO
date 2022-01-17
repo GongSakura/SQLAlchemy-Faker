@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: sqlalchemy-faker
-Version: 0.0.1
+Version: 0.0.3
 Summary: a tool of sqlalchemy for generating fake data
 Home-page: https://github.com/GongSakura/SQLAlchemy-Faker
 Author: GongSakura
